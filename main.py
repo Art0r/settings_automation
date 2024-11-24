@@ -1,82 +1,92 @@
-'''
-main code
-'''
+"""
+Main file to be executed
+"""
 import os
 import subprocess
 import shutil
-from functools import wraps
+import logging
+import argparse
+import sys
+
+# list is supported files that will be placed/written
+# it follows this structure: 'filename.extension': 'path it is/will be placed'
+FILES_PATH_LIST: dict[str, str] = {
+    'extensions.json': os.path.join(os.path.expanduser('~'),
+                                    '.vscode-oss', 'extensions'),
+    'settings.json': os.path.join(os.path.expanduser('~'),
+                                  '.config', 'VSCodium', 'User'),
+    '.gitconfig': os.path.expanduser('~'),
+    '.zshrc': os.path.expanduser('~'),
+    '.bashrc': os.path.expanduser('~')
+}
 
 
-DOWNLOAD_LOCATION = "dotfiles"
-GIT_REPO = str(input("Especifique o endereço do repositório no Github: ")).strip()
+def write_remote_into_local(remote_file_path: str, local_file_path: str) -> None:
+    """Receive the path for both the downloaded file and the local file then
+    replace the content of the local file for the content of the remote file.
+    If the local file does not exists it will be created
 
-def download_remote_configs() -> None:
-    '''main.py'''
-    subprocess.run(
-        ['git', 'clone', GIT_REPO], check=True)
+    Args:
+        remote_file_path (str): Path for the Github Repo downloaded file
+        local_file_path (str): Path for the local file or where it must be created
+    """
+    with open(remote_file_path, 'r', encoding='UTF-8') as remote_file:
+        with open(local_file_path, 'w', encoding='UTF-8') as local_file:
 
+            remote_file_content = remote_file.read()
+            local_file.write(remote_file_content)
+            local_file.close()
 
-def remove_remote_configs() -> None:
-    '''main.py'''
-    shutil.rmtree(DOWNLOAD_LOCATION)
-
-
-def read_remote_content(filename: str) -> str:
-    '''main.py'''
-    return open(
-        os.path.join(DOWNLOAD_LOCATION, filename), 'r', encoding='UTF-8').read()
-
-
-def write_remote_settings_to_local() -> None:
-    '''main.py'''
-    vscode_config_path = os.path.join(
-        os.path.expanduser('~'), '.config', 'VSCodium')
-
-    vscode_config_user_path = os.path.join(vscode_config_path, 'User')
-
-    vscode_settings_json_path = os.path.join(
-        vscode_config_user_path, 'settings.json')
-
-    with open(vscode_settings_json_path, 'w', encoding='UTF-8') as file:
-        content = read_remote_content('settings.json')
-        file.write(content)
-        file.close()
-
-
-def write_remote_extensions_to_local() -> None:
-    '''main.py'''
-    vscode_path = os.path.join(os.path.expanduser('~'), '.vscode-oss')
-
-    vscode_extensions_path = os.path.join(vscode_path, 'extensions')
-
-    vscode_extensions_json_path = os.path.join(
-        vscode_extensions_path, 'extensions.json')
-
-    with open(vscode_extensions_json_path, 'w', encoding='UTF-8') as file:
-        content = read_remote_content('extensions.json')
-        file.write(content)
-        file.close()
-
-
-def handle(func) -> None:
-    '''main.py'''
-    wraps(func)
-
-    def wrapper(*args, **kwargs):
-
-        download_remote_configs()
-        func(*args, **kwargs)
-        remove_remote_configs()
-
-    return wrapper
-
-
-@handle
-def main():
-    '''main.py'''
-    write_remote_extensions_to_local()
-    write_remote_settings_to_local()
+        remote_file.close()
 
 
 if __name__ == '__main__':
-    main()
+
+    logger = logging.getLogger(__name__)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s')
+
+    parser = argparse.ArgumentParser(
+        description="Script that adds 3 numbers from CMD"
+    )
+
+    parser.add_argument("--repo", required=True, type=str)
+    args = parser.parse_args()
+
+    # must be github repo with their config files
+    git_repo = args.repo
+
+    if git_repo == '' or git_repo is None:
+        logger.warning("Not a git repository")
+        sys.exit()
+
+    # If not a git repo then it should not be executed
+    if '.git' not in git_repo:
+        logger.warning('Repo need to be a non empty string')
+        sys.exit()
+
+    try:
+        # Getting download location from git repo url
+        download_folder: str = git_repo.split(
+            '.git', maxsplit=1)[0].split('/')[-1]
+
+        # cloning git repo using the system`s bash
+        subprocess.run(
+            ['git', 'clone', git_repo], check=True)
+
+        # iterating files
+        for key, value in FILES_PATH_LIST.items():
+
+            write_remote_into_local(
+                remote_file_path=os.path.join(
+                    os.getcwd(), download_folder, key),
+                local_file_path=os.path.join(value, key)
+            )
+
+    except Exception as e:
+        logger.warning(e.args)
+    finally:
+        # cleaning download folder
+        if os.path.isdir(download_folder):
+            shutil.rmtree(download_folder)
